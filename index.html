@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1e2329">
+<title>Чтение Чертежей</title>
+<link rel="manifest" href="manifest.json">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#1e2329;color:#e0e0e0;min-height:100vh}
+.header{background:#1e2329;padding:16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #2d333b}
+.header h1{font-size:18px;color:#f0b72f}
+.tabs{display:flex;background:#1e2329;border-bottom:1px solid #2d333b}
+.tab{flex:1;padding:14px;text-align:center;font-size:14px;color:#8b949e;cursor:pointer;border-bottom:3px solid transparent}
+.tab.active{color:#f0b72f;border-bottom-color:#f0b72f}
+.content{padding:16px}
+.page{display:none}
+.page.active{display:block}
+.cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.card{background:#2d333b;border-radius:8px;overflow:hidden;cursor:pointer;transition:.2s;min-height:180px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:20px;position:relative}
+.card:active{transform:scale(.97);background:#373e47}
+.card-icon{font-size:48px;margin-bottom:12px}
+.card-title{font-size:16px;font-weight:bold;text-align:center;color:#e0e0e0}
+.card-subtitle{font-size:12px;color:#8b949e;text-align:center;margin-top:6px}
+.card-bar{position:absolute;bottom:0;left:0;right:0;height:6px;background:#f0b72f}
+.btn{background:#238636;color:#fff;border:none;padding:14px;border-radius:6px;font-size:14px;cursor:pointer;width:100%;margin:8px 0;font-weight:600}
+.btn:active{background:#2ea043}
+.btn-secondary{background:#2d333b;color:#e0e0e0;border:1px solid #444c56}
+input,textarea{background:#0d1117;color:#e0e0e0;border:1px solid #30363d;padding:12px;border-radius:6px;font-size:14px;width:100%;margin:6px 0}
+input:focus,textarea:focus{outline:none;border-color:#f0b72f}
+.chat-box{display:flex;flex-direction:column;height:calc(100vh - 180px)}
+.messages{flex:1;overflow-y:auto;padding:8px 0}
+.msg{padding:10px 14px;border-radius:12px;margin:6px 0;max-width:90%;font-size:13px;line-height:1.5;white-space:pre-wrap}
+.msg-user{background:#238636;margin-left:auto;border-bottom-right-radius:4px}
+.msg-ai{background:#2d333b;border:1px solid #30363d;border-bottom-left-radius:4px}
+.msg-err{background:#3d1214;border:1px solid #da3633;color:#f85149}
+.chat-input{display:flex;gap:8px;padding-top:8px;border-top:1px solid #30363d;align-items:flex-end}
+.chat-input textarea{flex:1;resize:none;height:48px;padding:10px;background:#0d1117}
+.chat-input button{width:48px;height:48px;border-radius:50%;background:#f0b72f;color:#000;border:none;font-size:20px;cursor:pointer}
+.mic-btn{background:#2d333b!important;color:#f0b72f!important;border:1px solid #f0b72f!important}
+.mic-btn.recording{background:#da3633!important;color:#fff!important;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+canvas{width:100%;border-radius:8px;background:#fff;margin:12px 0}
+.nav{display:flex;align-items:center;justify-content:center;gap:16px}
+.nav button{background:#2d333b;color:#f0b72f;border:1px solid #f0b72f;width:44px;height:44px;border-radius:50%;font-size:18px}
+.nav span{color:#f0b72f;font-size:14px}
+.text-list{max-height:200px;overflow-y:auto;background:#0d1117;border-radius:6px;padding:8px;margin:8px 0}
+.text-item{padding:8px;border-bottom:1px solid #30363d;font-size:12px}
+.modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.8);z-index:100;justify-content:center;align-items:center;padding:20px}
+.modal.show{display:flex}
+.modal-body{background:#1e2329;padding:20px;border-radius:8px;width:100%;max-width:400px;border:1px solid #30363d}
+.modal-body h2{color:#f0b72f;margin-bottom:12px}
+.label{font-size:12px;color:#8b949e;margin-top:10px}
+.empty{text-align:center;color:#8b949e;padding:40px 20px}
+.voice-hint{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#238636;padding:8px 16px;border-radius:20px;font-size:12px;opacity:0;transition:.3s}
+.voice-hint.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>📐 Чтение Чертежей</h1>
+  <button onclick="showSettings()" style="background:#2d333b;color:#f0b72f;border:1px solid #f0b72f;padding:8px 12px;border-radius:6px;cursor:pointer">⚙️</button>
+</div>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab(0)">🏠 Главная</div>
+  <div class="tab" onclick="switchTab(1)"> Чат</div>
+  <div class="tab" onclick="switchTab(2)">✏️ Редактор</div>
+</div>
+<div class="content">
+  <div class="page active" id="p0">
+    <div class="cards-grid">
+      <div class="card" onclick="document.getElementById('fileInput').click()">
+        <div class="card-icon">📂</div>
+        <div class="card-title">Загрузить PDF</div>
+        <div class="card-subtitle">Открыть чертёж</div>
+        <div class="card-bar"></div>
+      </div>
+      <div class="card" onclick="switchTab(1)">
+        <div class="card-icon">🤖</div>
+        <div class="card-title">Спросить Qwen</div>
+        <div class="card-subtitle">Анализ ИИ</div>
+        <div class="card-bar"></div>
+      </div>
+      <div class="card" onclick="switchTab(2)">
+        <div class="card-icon">✏️</div>
+        <div class="card-title">Редактор</div>
+        <div class="card-subtitle">Изменить текст</div>
+        <div class="card-bar"></div>
+      </div>
+      <div class="card" onclick="showSettings()">
+        <div class="card-icon">⚙️</div>
+        <div class="card-title">Настройки</div>
+        <div class="card-subtitle">API ключ</div>
+        <div class="card-bar"></div>
+      </div>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf" style="display:none" onchange="loadPDF(this)">
+    <div id="viewerArea" style="display:none;margin-top:20px">
+      <div class="nav">
+        <button onclick="changePage(-1)">◀</button>
+        <span id="pageInfo">1 / 1</span>
+        <button onclick="changePage(1)">▶</button>
+      </div>
+      <canvas id="pdfCanvas"></canvas>
+      <details>
+        <summary style="color:#f0b72f;cursor:pointer;font-size:13px">📝 Извлечённый текст</summary>
+        <div id="extractedText" class="text-list"></div>
+      </details>
+    </div>
+  </div>
+  <div class="page" id="p1">
+    <div class="chat-box">
+      <div class="messages" id="chatMessages">
+        <div class="msg msg-ai"> Привет! Загрузите чертёж на главной, затем задайте вопрос.</div>
+      </div>
+      <div class="chat-input">
+        <textarea id="chatInput" placeholder="Ваш вопрос..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
+        <button class="mic-btn" id="chatMic" onclick="toggleVoice('chatInput','chatMic')">🎤</button>
+        <button onclick="sendChat()" style="background:#238636">➤</button>
+      </div>
+    </div>
+  </div>
+  <div class="page" id="p2">
+    <div id="editEmpty" class="empty">Сначала загрузите чертёж на главной</div>
+    <div id="editArea" style="display:none">
+      <div class="text-list" id="editTextList"></div>
+      <div class="label">Заменить текст:</div>
+      <input id="oldText" placeholder="Старый текст">
+      <input id="newText" placeholder="Новый текст">
+      <button class="btn" onclick="replaceText()">🔄 Заменить</button>
+      <div class="label">Добавить текст:</div>
+      <input id="addText" placeholder="Текст">
+      <div style="display:flex;gap:8px">
+        <input id="addX" placeholder="X" style="width:33%">
+        <input id="addY" placeholder="Y" style="width:33%">
+        <input id="addSize" placeholder="Размер" value="12" style="width:33%">
+      </div>
+      <button class="btn btn-secondary" onclick="addTextToPDF()">➕ Добавить</button>
+      <div class="label">Спросить Qwen:</div>
+      <textarea id="editPrompt" rows="2" placeholder="Например: Измени материал на Сталь 40Х"></textarea>
+      <button class="btn" onclick="askEdit()">🤖 Применить</button>
+      <button class="btn" onclick="downloadPDF()" style="background:#f0b72f;color:#000">💾 Скачать PDF</button>
+      <div id="editLog" style="margin-top:8px;font-size:12px;color:#3fb950"></div>
+    </div>
+  </div>
+</div>
+<div class="voice-hint" id="voiceHint"> Говорите...</div>
+<div class="modal" id="settingsModal">
+  <div class="modal-body">
+    <h2>️ Настройки</h2>
+    <div class="label">API Ключ</div>
+    <input id="apiKey" type="password" placeholder="sk-...">
+    <div class="label">Модель</div>
+    <input id="modelName" value="qwen-turbo">
+    <div class="label">API URL</div>
+    <input id="apiUrl" value="https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions">
+    <div class="label">Язык голоса</div>
+    <input id="voiceLang" value="ru-RU">
+    <button class="btn" onclick="saveSettings()" style="background:#f0b72f;color:#000">💾 Сохранить</button>
+    <button class="btn btn-secondary" onclick="closeSettings()">Закрыть</button>
+  </div>
+</div>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let pdfDoc=null,pdfBytes=null,currentPage=1,totalPages=0,allTexts=[],chatHistory=[];
+const SpeechRec=window.SpeechRecognition||window.webkitSpeechRecognition;
+let recognition=null,activeMic=null,activeField=null;
+function initVoice(){
+  if(!SpeechRec)return null;
+  const rec=new SpeechRec();
+  rec.lang=localStorage.getItem('voice_lang')||'ru-RU';
+  rec.continuous=false;rec.interimResults=true;
+  rec.onresult=(e)=>{
+    let final='',interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal)final+=t;else interim+=t;
+    }
+    if(activeField){
+      if(!activeField._orig)activeField._orig=activeField.value;
+      activeField.value=activeField._orig+final+interim;
+    }
+  };
+  rec.onend=()=>{
+    if(activeMic){activeMic.classList.remove('recording');activeMic.textContent='🎤'}
+    document.getElementById('voiceHint').classList.remove('show');
+    if(activeField){delete activeField._orig;activeField=null}
+    activeMic=null;
+  };
+  rec.onerror=(e)=>{
+    if(e.error==='not-allowed')alert('Разрешите доступ к микрофону');
+    if(activeMic){activeMic.classList.remove('recording');activeMic.textContent=''}
+    activeMic=null;if(activeField){delete activeField._orig;activeField=null}
+  };
+  return rec;
+}
+function toggleVoice(fieldId,micEl){
+  const field=document.getElementById(fieldId);if(!field)return;
+  if(!SpeechRec){alert('Используйте Chrome');return}
+  if(recognition&&activeField===field){recognition.stop();return}
+  if(recognition)try{recognition.stop()}catch(e){}
+  recognition=initVoice();if(!recognition)return;
+  activeField=field;
+  activeMic=micEl instanceof Element?micEl:document.getElementById(micEl);
+  field._orig=field.value;
+  if(activeMic){activeMic.classList.add('recording');activeMic.textContent='⏺'}
+  document.getElementById('voiceHint').classList.add('show');
+  try{recognition.start()}catch(e){}
+}
+function loadSettings(){
+  document.getElementById('apiKey').value=localStorage.getItem('qwen_key')||'';
+  document.getElementById('modelName').value=localStorage.getItem('qwen_model')||'qwen-turbo';
+  document.getElementById('apiUrl').value=localStorage.getItem('qwen_url')||'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+  document.getElementById('voiceLang').value=localStorage.getItem('voice_lang')||'ru-RU';
+}
+function saveSettings(){
+  localStorage.setItem('qwen_key',document.getElementById('apiKey').value);
+  localStorage.setItem('qwen_model',document.getElementById('modelName').value);
+  localStorage.setItem('qwen_url',document.getElementById('apiUrl').value);
+  localStorage.setItem('voice_lang',document.getElementById('voiceLang').value);
+  closeSettings();
+}
+function showSettings(){document.getElementById('settingsModal').classList.add('show');loadSettings()}
+function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
+function switchTab(n){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===n));
+  document.querySelectorAll('.page').forEach((p,i)=>p.classList.toggle('active',i===n));
+}
+async function loadPDF(input){
+  const file=input.files[0];if(!file)return;
+  try{
+    const buf=await file.arrayBuffer();
+    pdfBytes=new Uint8Array(buf);
+    pdfDoc=await pdfjsLib.getDocument({data:pdfBytes.slice()}).promise;
+    totalPages=pdfDoc.numPages;currentPage=1;allTexts=[];
+    document.getElementById('viewerArea').style.display='block';
+    document.getElementById('editEmpty').style.display='none';
+    document.getElementById('editArea').style.display='block';
+    await renderPage();await extractAllText();
+  }catch(e){alert('Ошибка: '+e.message)}
+}
+async function renderPage(){
+  const page=await pdfDoc.getPage(currentPage);
+  const canvas=document.getElementById('pdfCanvas');
+  const ctx=canvas.getContext('2d');
+  const vw=window.innerWidth-32;
+  const vp=page.getViewport({scale:1});
+  const scale=vw/vp.width;
+  const viewport=page.getViewport({scale});
+  canvas.width=viewport.width;canvas.height=viewport.height;
+  await page.render({canvasContext:ctx,viewport}).promise;
+  document.getElementById('pageInfo').textContent=`${currentPage} / ${totalPages}`;
+}
+function changePage(d){currentPage=Math.max(1,Math.min(totalPages,currentPage+d));renderPage()}
+async function extractAllText(){
+  allTexts=[];
+  const textDiv=document.getElementById('extractedText');
+  const editDiv=document.getElementById('editTextList');
+  textDiv.innerHTML='';editDiv.innerHTML='';
+  for(let i=1;i<=totalPages;i++){
+    const page=await pdfDoc.getPage(i);
+    const tc=await page.getTextContent();
+    tc.items.filter(t=>t.str.trim()).forEach(t=>{
+      allTexts.push({text:t.str.trim(),page:i,x:Math.round(t.transform[4]),y:Math.round(t.transform[5])});
+    });
+  }
+  allTexts.forEach(t=>{
+    const d1=document.createElement('div');d1.className='text-item';
+    d1.textContent=`стр.${t.page}: ${t.text}`;textDiv.appendChild(d1);
+    const d2=document.createElement('div');d2.className='text-item';
+    d2.textContent=t.text;editDiv.appendChild(d2);
+  });
+}
+function addMsg(text,type='ai'){
+  const div=document.createElement('div');
+  div.className=`msg msg-${type}`;div.textContent=text;
+  const box=document.getElementById('chatMessages');
+  box.appendChild(div);box.scrollTop=box.scrollHeight;return div;
+}
+async function sendChat(){
+  const input=document.getElementById('chatInput');
+  const q=input.value.trim();if(!q)return;
+  input.value='';addMsg(q,'user');
+  const key=localStorage.getItem('qwen_key');
+  if(!key){addMsg('⚠️ Введите API ключ в настройках','err');showSettings();return}
+  const context=allTexts.length?`Текст чертежа:\n${allTexts.map(t=>`[стр.${t.page}] ${t.text}`).join('\n')}`:'Чертеж не загружен.';
+  chatHistory.push({role:'user',content:`${context}\n\nВопрос: ${q}`});
+  const loading=addMsg('⏳ Думаю...','ai');
+  try{
+    const url=localStorage.getItem('qwen_url');
+    const model=localStorage.getItem('qwen_model')||'qwen-turbo';
+    const res=await fetch(url,{
+      method:'POST',
+      headers:{'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},
+      body:JSON.stringify({model,messages:[{role:'system',content:'Ты инженер-конструктор. Анализируй чертежи по ГОСТ.'},...chatHistory.slice(-10)],temperature:0.3})
+    });
+    const data=await res.json();loading.remove();
+    if(data.choices?.[0]){
+      const reply=data.choices[0].message.content;
+      addMsg(reply,'ai');chatHistory.push({role:'assistant',content:reply});
+    }else addMsg('❌ '+(data.error?.message||JSON.stringify(data)),'err');
+  }catch(e){loading.remove();addMsg('❌ '+e.message,'err')}
+}
+async function replaceText(){
+  const old=document.getElementById('oldText').value.trim();
+  const nw=document.getElementById('newText').value.trim();
+  if(!old||!nw){log('Заполните оба поля');return}
+  try{
+    const pdf=await PDFLib.PDFDocument.load(pdfBytes);
+    const pages=pdf.getPages();
+    const font=await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
+    let found=0;
+    allTexts.filter(t=>t.text.includes(old)).forEach(m=>{
+      if(m.page-1<pages.length){
+        const p=pages[m.page-1];const {height}=p.getSize();
+        const tw=font.widthOfTextAtSize(nw,10);
+        const py=height-m.y;
+        p.drawRectangle({x:m.x-2,y:py-12,width:tw+10,height:16,color:PDFLib.rgb(1,1,1)});
+        p.drawText(nw,{x:m.x,y:py-10,size:10,font,color:PDFLib.rgb(0,0,0)});
+        found++;
+      }
+    });
+    if(found){pdfBytes=await pdf.save();pdfDoc=await pdfjsLib.getDocument({data:pdfBytes.slice()}).promise;await renderPage();log(`✅ Заменено: ${found}`)}
+    else log('❌ Не найдено');
+  }catch(e){log('❌ '+e.message)}
+}
+async function addTextToPDF(){
+  const text=document.getElementById('addText').value.trim();
+  const x=parseInt(document.getElementById('addX').value)||50;
+  const y=parseInt(document.getElementById('addY').value)||50;
+  const size=parseInt(document.getElementById('addSize').value)||12;
+  if(!text){log('Введите текст');return}
+  try{
+    const pdf=await PDFLib.PDFDocument.load(pdfBytes);
+    const page=pdf.getPages()[currentPage-1];
+    const font=await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
+    const {height}=page.getSize();
+    page.drawText(text,{x,y:height-y,size,font,color:PDFLib.rgb(0,0,0)});
+    pdfBytes=await pdf.save();pdfDoc=await pdfjsLib.getDocument({data:pdfBytes.slice()}).promise;
+    await renderPage();log(`✅ Добавлено: "${text}"`);
+  }catch(e){log('❌ '+e.message)}
+}
+async function askEdit(){
+  const prompt=document.getElementById('editPrompt').value.trim();if(!prompt)return;
+  const key=localStorage.getItem('qwen_key');
+  if(!key){log('⚠️ Введите API ключ');showSettings();return}
+  log(' Запрос к Qwen...');
+  const context=allTexts.map(t=>t.text).join(', ');
+  try{
+    const url=localStorage.getItem('qwen_url');
+    const model=localStorage.getItem('qwen_model')||'qwen-turbo';
+    const res=await fetch(url,{
+      method:'POST',
+      headers:{'Authorization':`Bearer ${key}`,'Content-Type':'application/json'},
+      body:JSON.stringify({model,messages:[{role:'system',content:`Верни JSON: [{"old":"старый","new":"новый"}]. Текст: ${context}`},{role:'user',content:prompt}],temperature:0.1})
+    });
+    const data=await res.json();
+    const reply=data.choices?.[0]?.message?.content||'';
+    const jsonMatch=reply.match(/\[[\s\S]*\]/);
+    if(jsonMatch){
+      const edits=JSON.parse(jsonMatch[0]);
+      for(const e of edits){document.getElementById('oldText').value=e.old;document.getElementById('newText').value=e.new;await replaceText()}
+      log(`✅ Применено: ${edits.length}`);
+    }else log('Ответ: '+reply);
+  }catch(e){log('❌ '+e.message)}
+}
+async function downloadPDF(){
+  if(!pdfBytes)return;
+  const blob=new Blob([pdfBytes],{type:'application/pdf'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='edited_drawing.pdf';a.click();log('✅ Скачано');
+}
+function log(msg){document.getElementById('editLog').innerHTML+=msg+'<br>'}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+          </html>
